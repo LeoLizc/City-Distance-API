@@ -112,8 +112,11 @@ async function obtenerMatrizDistancias(coordenadas, apiKey) {
         },
       }
     );
+    const matrix = response.data.distances.map((fila, i) =>
+      fila.map((valor, j) => (i !== j && !valor ? 1000000 : valor))
+    );
 
-    return response.data.distances;
+    return matrix;
   } catch (error) {
     throw new Error('Error al obtener distancias');
   }
