@@ -1,17 +1,22 @@
 const express = require('express');
-const app = express();
-const port = process.env.PORT || 3000;
 const axios = require('axios');
 
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
 app.get('/coordenadas', async (req, res) => {
-  const { ciudades, key, country = 'COL' } = req.query;
+  const { ciudades, key, pais = 'COL' } = req.query;
 
   if (!ciudades || !key) {
     return res.send('Faltan parámetros');
   }
 
   try {
-    const coordenadas = await obtenerCoordenadas(ciudades.split(','), key);
+    places = ciudades.split(',').map(ciudad => ({ ciudad, pais }));
+
+    const coordenadas = await obtenerCoordenadas(places, key);
 
     res.send(coordenadas);
   } catch (error) {
@@ -21,14 +26,17 @@ app.get('/coordenadas', async (req, res) => {
 });
 
 app.get('/distancias', async (req, res) => {
-  const { ciudades, key, country = 'COL' } = req.query;
+  const { ciudades, key, pais = 'COL' } = req.query;
 
   if (!ciudades || !key) {
     return res.send('Faltan parámetros');
   }
 
   try {
-    const coordenadas = await obtenerCoordenadas(ciudades.split(','), key);
+
+    places = ciudades.split(',').map(ciudad => ({ ciudad, pais }));
+
+    const coordenadas = await obtenerCoordenadas(places, key);
 
     const matrizDistancias = await obtenerMatrizDistancias(
       coordenadas.map(coordenada => [coordenada.longitud, coordenada.latitud]),
@@ -42,11 +50,41 @@ app.get('/distancias', async (req, res) => {
   }
 });
 
-async function obtenerCoordenadas(ciudades, apiKey, country = 'COL') {
+app.post('/distancias', async (req, res) => {
+  const { lugares, opciones } = req.body;
+  const key = req.headers.authorization;
+
+  if (!lugares || !key) {
+    return res.send('Faltan parámetros');
+  }
+
   try {
-    const promesasCoordenadas = ciudades.map(async ciudad => {
+    const coordenadas = await obtenerCoordenadas(lugares, key);
+
+    let matrizDistancias = await obtenerMatrizDistancias(
+      coordenadas.map(coordenada => [coordenada.longitud, coordenada.latitud]),
+      key
+    );
+
+
+    if (opciones) {
+      // pipeline de opciones colocadas como true
+      if (opciones.simetrica) {
+        matrizDistancias = await hacerSimetrica(matrizDistancias);
+      }
+    }
+    res.send(matrizDistancias);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send('Error al obtener coordenadas');
+  }
+});
+
+async function obtenerCoordenadas(places, apiKey) {
+  try {
+    const promesasCoordenadas = places.map(async ({ ciudad, pais }) => {
       const response = await axios.get(
-        `https://api.openrouteservice.org/geocode/search?api_key=${apiKey}&text=${ciudad}&boundary.country=${country}`
+        `https://api.openrouteservice.org/geocode/search?api_key=${apiKey}&text=${ciudad}&boundary.country=${pais}`
       );
       const coordenadas = response.data.features[0].geometry.coordinates;
       return { ciudad, latitud: coordenadas[1], longitud: coordenadas[0] };
@@ -81,6 +119,15 @@ async function obtenerMatrizDistancias(coordenadas, apiKey) {
   }
 }
 
+// La siguiente función recibe una matriz y la convierte en una matriz simétrica tomando el valor más pequeño entre la posición actual y la posición simétrica
+async function hacerSimetrica(matriz) {
+  const matrizSimetrica = matriz.map((fila, i) =>
+    fila.map((valor, j) => Math.min(valor, matriz[j][i]))
+  );
+
+  return matrizSimetrica;
+}
+
 app.listen(port, () => {
-  console.log(`El servidor está corriendo en puerto${port}`);
+  console.log(`El servidor está corriendo en puerto ${port}`);
 });
